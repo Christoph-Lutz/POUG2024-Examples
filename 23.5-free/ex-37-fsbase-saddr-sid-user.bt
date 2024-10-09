@@ -1,0 +1,63 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to access the fsbase register
+ *   with bpftrace via curtask->thread.fsbase and how to use
+ *   it to get access to fields in Oracle's session struct
+ *   in the sga (ksuse).
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-22 2024
+ *
+ * Usage:
+ *   ex-37-fsbase-saddr-sid-user.bt <pid>
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ *   Important: Tracing with the UEK7 kernel version
+ *   5.15.0-3.60.5.1 is hopelessly broken. Either upgrade
+ *   to the more recent UEK7/u2 kernel version 5.15.0-210.163.7
+ *   or use an older one, like 4.18.0-553.16.1.
+ *
+ * Tested on:
+ *   Oracle 23ai free (23.5.0.24.07), VirtualBox Image,
+ *   kernel 5.15.0-210.163.7, bpftrace 0.16
+ */
+
+BEGIN
+{
+    if ($# != 1) {
+        printf("\nUsage: ex-37-fsbase-saddr-sid-user.bt <pid>\n");
+        exit();
+    }
+
+    @kspssidst = uptr(0x6000b760);
+}
+
+uprobe:/opt/oracle/product/23ai/dbhomeFree/bin/oracle:opiexe
+/ pid == $1 /
+{
+    $ksuudlna_off = (uint64) 0xc9;  /* username offset  */
+    $ksusenum_off = (uint64) 0xc08; /* sid offset       */ 
+    $saddr_off = (uint64) 0xf350;   /* tls offset       */
+
+    $fsbase = uptr(curtask->thread.fsbase);
+    $saddr_p = uptr($fsbase - $saddr_off);
+    $saddr = *(uint64 *) uptr($saddr_p);
+    $username = str($saddr + $ksuudlna_off);
+    $sid = *(uint64 *)($saddr + $ksusenum_off);
+
+    printf("pid: %ld comm: %s SID: %s fs: 0x%lx saddr: 0x%lx ", 
+            pid, comm, str(@kspssidst), $fsbase, $saddr);
+    printf("sid: %d ", $sid);
+    printf("user: %s\n", $username);
+}
+
+END
+{
+    clear(@kspssidst)
+}

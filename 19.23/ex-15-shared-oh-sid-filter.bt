@@ -1,0 +1,43 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to use the oracle sid in
+ *   a uprobe predicate to filter by a particular
+ *   sid.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Oct-02 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+BEGIN
+{
+    if ($# < 1) {
+        printf("\nUsage: ex-15-shared-oh-sid-filter.bt <oracle_sid>\n");
+        exit();
+    }
+
+    @kspssidst = uptr(0x60009628);
+
+    printf("Tracing calls by sid %s ... Hit ^C to stop.\n\n", str($1));
+}
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:opiexe
+/ str(uptr(@kspssidst)) == str($1) /
+{
+    printf("pid: %ld comm: %s sid: %s\n", 
+           pid, comm, str(@kspssidst));
+}
+
+END
+{
+    clear(@kspssidst);
+}

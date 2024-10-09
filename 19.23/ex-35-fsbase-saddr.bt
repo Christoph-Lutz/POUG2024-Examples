@@ -1,0 +1,42 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to access the fsbase register
+ *   with bpftrace via curtask->thread.fsbase and how to use
+ *   it to retrieve the Oracle saddr that points to the 
+ *   sga session struct (ksuse) of the current session.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-22 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+BEGIN
+{
+    @kspssidst = uptr(0x60009628);
+}
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:opiexe
+{
+    $saddr_off = (uint64) 0xff78;
+
+    $fsbase = uptr(curtask->thread.fsbase);
+    $saddr_p = uptr($fsbase - $saddr_off);
+    $saddr = *(uint64 *) $saddr_p;
+
+    printf("pid: %ld comm: %s sid: %s fsbase: %p saddr: %p\n", 
+           pid, comm, str(@kspssidst), $fsbase, $saddr);
+}
+
+END
+{
+    clear(@kspssidst);
+}

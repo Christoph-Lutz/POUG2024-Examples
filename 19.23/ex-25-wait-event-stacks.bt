@@ -1,0 +1,67 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to emit a stack trace
+ *   whenever a given wait event occurs. This is 
+ *   useful to figure what code paths result in a
+ *   wait event.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-28 2024
+ *  
+ * Usage:
+ *   BPFTRACE_CACHE_USER_SYMBOLS=1 ./ex-25-wait-event-stacks.bt <wait_event>
+ * 
+ *   Example: Show call stack of 'log file sync' wait events:
+ *   BPFTRACE_CACHE_USER_SYMBOLS=1 ./ex-25-wait-event-stacks.bt "log file sync" 
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment. 
+ *
+ *   You can enhance this by adding additional filter predicates
+ *   like pid or the oracle sid to restrict the tracing to a 
+ *   given pid or db instance.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+BEGIN
+{
+    if ($# < 1) {
+        printf("\nUsage: BPFTRACE_CACHE_USER_SYMBOLS=1 ex-25-wait-event-stacks.bt <wait_event>\n");
+        exit();
+    }
+    printf("Tracing wait events ... Hit ^C to stop.\n\n");
+
+    @kspssidst = uptr(0x60009628);
+    @ksledt = uptr(0x600069f0);
+}
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:kskthbwt
+{
+    $ev_num = (uint64) arg1;
+    $ksledt = *(uint64 *) @ksledt;
+    $ksled_sz = (uint64) 0x38;
+    $ev_off = (uint64) ($ev_num * $ksled_sz);
+
+    $kslednam_p = *(uint64 *) uptr($ksledt + $ev_off);
+    $kslednam = str($kslednam_p);
+
+    if ($kslednam == str($1)) {
+        /* Remove comments for 'live' stack tracing - very verbose! */
+        // printf("%lu %s %lu %s\n", pid, comm, $ev_num, $kslednam);
+        // print(ustack());
+        $sid = str(@kspssidst);
+        @stacks[$sid,ustack()] = count();
+    }
+}
+
+END
+{
+    clear(@kspssidst);
+    clear(@ksledt);
+}

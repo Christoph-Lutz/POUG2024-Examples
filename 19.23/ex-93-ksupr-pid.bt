@@ -1,0 +1,87 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to read data from the x$ksupr
+ *   (v$process) structure in the sga.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-29 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ *   If you have multiple oracle homes, add a uprobe for
+ *   every oracle home that you want to trace.
+ *
+ *   The script only traces opi top level (dep=0) calls
+ *   and no recursive calls.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+BEGIN
+{
+    if ($# < 1) {
+        printf("\nUsage: ex-92-ksupr-pid.bt <pid>\n");
+        exit();
+    }
+
+    printf("Tracing pid %lu ... Hit ^C to stop.\n\n", $1); 
+
+    @kspssidst = uptr(0x60009628);
+    @paddr_tls_off = (uint64) 0xff90; /* paddr tls offset */ 
+    @ksuprpum_off = (uint64) 0xe90;   /* pga used memory  */
+    @ksuprpram_off = (uint64) 0xe58;  /* pga alloc memory */
+    @ksuprpnam_off = (uint64) 0xe70;  /* pga alloc memory */
+}
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:opiexe
+/ pid == $1 /
+{
+    @opi_lvl[pid]++;
+
+    $fsbase = (uint64) uptr(curtask->thread.fsbase);
+    $paddr_p = (uint64) uptr($fsbase - @paddr_tls_off);
+    @paddr[pid] = *(uint64 *) $paddr_p;
+
+    $used_mb = (*(uint64 *)(@paddr[pid] + @ksuprpum_off)/1024/1024); 
+    $alloc1 = *(uint64 *)(@paddr[pid] + @ksuprpram_off);
+    $alloc2 = *(uint64 *)(@paddr[pid] + @ksuprpnam_off);
+    $alloc_mb = (($alloc1 + $alloc2)/1024/1024);
+
+    time("%H:%M:%S ");
+    printf("%lu %s %s -> opiexe: paddr=%p used_mb=%lu alloc_mb=%lu\n",
+    pid, comm, str(@kspssidst), @paddr[pid], $used_mb, $alloc_mb);
+}
+
+uretprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:opiexe
+/ pid == $1 && @opi_lvl[pid] /
+{
+    /* Only opi top-level calls */
+    if (@opi_lvl[pid] == 1) {
+        $used_mb = (*(uint64 *)(@paddr[pid] + @ksuprpum_off)/1024/1024);
+        $alloc1 = *(uint64 *)(@paddr[pid] + @ksuprpram_off);
+        $alloc2 = *(uint64 *)(@paddr[pid] + @ksuprpnam_off);
+        $alloc_mb = (($alloc1 + $alloc2)/1024/1024);
+
+        time("%H:%M:%S ");
+        printf("%lu %s %s <- opiexe: paddr=%p used_mb=%lu alloc_mb=%lu\n", 
+               pid, comm, str(@kspssidst), @paddr[pid], $used_mb, $alloc_mb);
+    }
+    @opi_lvl[pid]--;
+}
+
+END
+{
+    clear(@kspssidst);
+    clear(@paddr_tls_off);
+    clear(@ksuprpum_off);
+    clear(@ksuprpram_off);
+    clear(@ksuprpnam_off); 
+    clear(@opi_lvl);
+    clear(@paddr);
+}

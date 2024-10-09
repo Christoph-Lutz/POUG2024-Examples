@@ -1,0 +1,57 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Count the total number of sql executions (opiexe calls) per
+ *   second for every db instance running from the same oracle home.
+ *   Also provide a break-down of the call count per db instance
+ *   every second.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-21 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ *   Important: Tracing with the UEK7 kernel version
+ *   5.15.0-3.60.5.1 is hopelessly broken. Either upgrade
+ *   to the more recent UEK7/u2 kernel version 5.15.0-210.163.7
+ *   or use an older one, like 4.18.0-553.16.1.
+ *
+ * Tested on:
+ *   Oracle 23ai free (23.5.0.24.07), VirtualBox Image,
+ *   kernel 5.15.0-210.163.7, bpftrace 0.16
+ */
+
+BEGIN
+{
+    @kspssidst = uptr(0x6000b760);
+    printf("\nTracing opiexe call count ... Hit ^C to stop.\n\n");
+}
+
+uprobe:/opt/oracle/product/23ai/dbhomeFree/bin/oracle:opiexe
+{
+    @tot_cnt++;
+    @db_cnt[str(@kspssidst)]++;
+}
+
+interval:s:1
+{
+    printf("\n");
+    time("*** %H:%M:%S\n");
+    printf("Total: %d\n\n", @tot_cnt);
+    @tot_cnt = 0;
+
+    printf("Per db instance:\n");
+    print(@db_cnt);
+    clear(@db_cnt);
+}
+
+END
+{
+    clear(@kspssidst);
+    clear(@tot_cnt);
+    clear(@db_cnt);
+}

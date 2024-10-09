@@ -1,0 +1,34 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Simple example to demonstrate that the bpftrace 
+ *   uaddr() function doesn't work with global absolute
+ *   symbols.
+ * 
+ *   Executing this script will result in the following
+ *   error:
+ *     ERROR: Could not resolve symbol: oracle:kspssidst_
+ * 
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-21 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ *   Important: Tracing with the UEK7 kernel version
+ *   5.15.0-3.60.5.1 is hopelessly broken. Either upgrade
+ *   to the more recent UEK7/u2 kernel version 5.15.0-210.163.7
+ *   or use an older one, like 4.18.0-553.16.1.
+ *
+ * Tested on:
+ *   Oracle 23ai free (23.5.0.24.07), VirtualBox Image,
+ *   kernel 5.15.0-210.163.7, bpftrace 0.16
+ */
+
+uprobe:/opt/oracle/product/23ai/dbhomeFree/bin/oracle:opiexe
+{
+    printf("kspssidst=%s\n", str(uaddr("kspssidst_")));
+}

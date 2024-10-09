@@ -1,0 +1,63 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to look up the name of a latch
+ *   requested by kslgetl.
+ *
+ *   Steps:
+ *     1. Read the latch# (kslltnum) from the ksllt latch
+ *        structure (arg0).
+ *     2. Use the latch# to calculate the offset of the
+ *        string pointer in the latch descriptor table
+ *        kslldt.
+ *     3. Derefence the string pointer to look up the
+ *        latch name.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-21 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ *   If you have multiple oracle homes, add a uprobe for
+ *   every oracle home that you want to trace.
+ *
+ *   Tracing kslgetl calls from multiple instances at the
+ *   same time will very likely result in lost trace events.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+BEGIN
+{
+    @kspssidst = uptr(0x60009628);
+}
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:kslgetl
+{
+    $kslldt = (uint64) uaddr("kslldt");
+    $kslld_sz = (uint64) 0x28;
+    $kslltnum_off = (uint64) 0xc;
+
+    $kslltaddr = (uint64) uptr(arg0);
+    $kslltnum = *(uint16 *)($kslltaddr + $kslltnum_off);
+
+    $kslldt_off = ((uint64) $kslltnum * $kslld_sz);
+    $kslldtnam_p = *(uint64 *) uptr($kslldt + $kslldt_off);
+    $kslltnam = str($kslldtnam_p);
+
+    printf("sid: %s pid: %ld comm: %s kslgetl: laddr#: %p ", 
+            str(@kspssidst), pid, comm, $kslltaddr);
+    printf("kslldt: 0x%lx ", $kslldt);
+    printf("kslltnum: %d ", $kslltnum);
+    printf("kslltnam: %s\n", $kslltnam);
+}
+
+END
+{
+    clear(@kspssidst);
+}

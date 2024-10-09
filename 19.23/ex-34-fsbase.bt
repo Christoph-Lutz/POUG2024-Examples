@@ -1,0 +1,37 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to access the fsbase register
+ *   with bpftrace via curtask->thread.fsbase. This is use-
+ *   full to get access to TLS variables in bpftrace.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-22 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+BEGIN
+{
+    @kspssidst = uptr(0x60009628);
+}
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:opiexe
+{
+    $saddr_tls_off = (uint64) 0xff78;
+    $fsbase = uptr(curtask->thread.fsbase);
+
+    printf("pid: %lu comm: %s sid: %s fsbase: %p\n", pid, comm, str(@kspssidst), $fsbase);
+}
+
+END
+{
+    clear(@kspssidst);
+}

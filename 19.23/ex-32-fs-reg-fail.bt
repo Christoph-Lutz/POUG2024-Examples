@@ -1,0 +1,42 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example to demonstrate that accessing the %fs and %fsbase
+ *   registers from bpftrace is not possible and will fail with
+ *   the following error:
+ *   
+ *   ERROR: 'fs' is not a valid register on this architecture (x86_64)
+ *   
+ *   Usually, bpftrace can access registers via the reg() function, 
+ *   as shown below, but this will not work with %fs or %fsbase:
+ *
+ *     $r_di = (uint64) reg("di");
+ *     printf("r_di: %p\n", $r_di);
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-22 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ * Tested on:
+ *   Oracle 19.23, OEL 8.10, kernel 5.4.17-2136.330.7.5, bpftrace 0.16
+ */
+
+uprobe:/u01/app/oracle/product/19.0.0.0/dbhome_1923_1/bin/oracle:opiexe
+{
+    /* None of this will work! */
+    $fs_p = (uint64) reg("fs");
+    printf("fs_p: %p\n", $fs_p);
+
+    /* Remove comments to test these variations */
+    // $fsbase_p = (uint64) reg("fsbase");
+    // printf("fsbase_p: %p\n", $fsbase_p);
+
+    // $fs_base_p = (uint64) reg("fs_base");
+    // printf("fs_base_p: %p\n", $fs_base_p);
+
+}

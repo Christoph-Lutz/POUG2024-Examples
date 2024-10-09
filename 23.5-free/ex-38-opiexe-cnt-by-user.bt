@@ -1,0 +1,52 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Count the number of sql executions (opiexe calls) per user
+ *   per second for all db instances running from the same oracle
+ *   home.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-22 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ * Tested on:
+ *   Oracle 23ai free (23.5.0.24.07), VirtualBox Image,
+ *   kernel 5.15.0-210.163.7, bpftrace 0.16
+ */
+
+BEGIN
+{
+    @kspssidst = uptr(0x6000b760);
+}
+
+uprobe:/opt/oracle/product/23ai/dbhomeFree/bin/oracle:opiexe
+{
+    $ksuudlna_off = (uint64) 0xc9;  /* username offset */
+    $ksusenum_off = (uint64) 0xc08; /* sid offset      */ 
+    $saddr_off = (uint64) 0xf350;   /* tls offset      */
+
+    $fsbase = uptr(curtask->thread.fsbase);
+    $saddr_p = uptr($fsbase - $saddr_off);
+    $saddr = *(uint64 *) uptr($saddr_p);
+    $username = str($saddr + $ksuudlna_off);
+
+    @call_cnt[str(@kspssidst),$username]++;
+}
+
+interval:s:1
+{
+    time("\n*** %H:%M:%S\n");
+    print(@call_cnt);
+    clear(@call_cnt);
+}
+
+END
+{
+    clear(@kspssidst);
+    clear(@call_cnt);
+}

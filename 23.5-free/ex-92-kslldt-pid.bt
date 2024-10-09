@@ -1,0 +1,75 @@
+#!/usr/bin/env -S bpftrace --no-warnings
+/*
+ * Purpose:
+ *   Example that shows how to look up the name of a latch
+ *   requested by kslgetl. This script traces only a single
+ *   process (tracing all oracle processes system-wide will 
+ *   very likely result in lost trace events because of too 
+ *   many latch gets).
+ *
+ *   Steps:
+ *     1. Read the latch# (kslltnum) from the ksllt latch
+ *        structure (arg0).
+ *     2. Use the latch# to calculate the offset of the
+ *        string pointer in the latch descriptor table
+ *        kslldt.
+ *     3. Derefence the string pointer to look up the
+ *        latch name.
+ *
+ * Author:
+ *   Christoph Lutz
+ *
+ * Date:
+ *   Sep-21 2024
+ *
+ * Notes:
+ *   Adjust the ORACLE_HOME path for your environment.
+ *
+ *   If you have multiple oracle homes, add a uprobe for
+ *   every oracle home that you want to trace.
+ *
+ *   Tracing kslgetl calls from multiple instances at the
+ *   same time will very likely result in lost trace events.
+ *
+ * Tested on:
+ *   Oracle 23ai free (23.5.0.24.07), VirtualBox Image,
+ *   kernel 5.15.0-210.163.7, bpftrace 0.16
+ */
+
+BEGIN
+{
+    if ($# < 1) {
+        printf("\nUsage: ex-92-kslldt-pid.bt <pid>\n");
+        exit();
+    }
+
+    printf("\nTracing kslgetl calls for pid %lu ... Hit ^C to stop.\n\n", $1);
+
+    @kspssidst = uptr(0x6000b760);
+}
+
+uprobe:/opt/oracle/product/23ai/dbhomeFree/bin/oracle:kslgetl
+/ pid == $1 /
+{
+    $kslldt = (uint64) uaddr("kslldt");
+    $kslld_sz = (uint64) 0x28;
+    $kslltnum_off = (uint64) 0xc;
+
+    $kslltaddr = (uint64) uptr(arg0);
+    $kslltnum = *(uint16 *)($kslltaddr + $kslltnum_off);
+
+    $kslldt_off = ((uint64) $kslltnum * $kslld_sz);
+    $kslldtnam_p = *(uint64 *) uptr($kslldt + $kslldt_off);
+    $kslltnam = str($kslldtnam_p);
+
+    printf("sid: %s pid: %ld comm: %s kslgetl: laddr#: %p ", 
+            str(@kspssidst), pid, comm, $kslltaddr);
+    printf("kslldt: 0x%lx ", $kslldt);
+    printf("kslltnum: %d ", $kslltnum);
+    printf("kslltnam: %s\n", $kslltnam);
+}
+
+END
+{
+    clear(@kspssidst);
+}
