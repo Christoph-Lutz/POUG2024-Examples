@@ -1,1 +1,3 @@
 *.sed linguist-detectable=false
+*.py linguist-detectable=false
+*.sh linguist-detectable=false
